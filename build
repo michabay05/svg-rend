@@ -1,0 +1,14 @@
+#! /bin/sh
+
+set -xe
+
+# typst c test.typ test.svg --ignore-embedded-fonts \
+#     --ignore-system-fonts --font-path ~/.local/share/fonts/ppviewer
+
+# typst c test.typ test.svg --ignore-system-fonts --font-path ~/.local/share/fonts/ppviewer
+
+# gcc -Wall -Wextra -pedantic -ggdb -I./vendor/include/ main.c \
+#     -o main -L. -L./vendor/lib -l:libraylib.a -lm -l:libresvg.a
+
+gcc -Wall -Wextra -pedantic -ggdb -I./vendor/include/ svg_parse.c svg_rend.c \
+    -o main -L. -L./vendor/lib -l:libraylib.a -lm -l:libresvg.a
