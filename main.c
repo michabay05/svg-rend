@@ -1,163 +1,80 @@
-#include "./vendor/include/raylib.h"
-#include "./vendor/include/rlgl.h"
-#include "./vendor/include/raymath.h"
-#include <math.h>
-#define ARENA_IMPLEMENTATION
-#include "./vendor/include/arena.h"
-#include "nob.h"
-
-#define PRINT_F(f) (printf("%s = %.4f\n", #f, f))
-#define PRINT_V2(v) (printf("%s = (%.4f, %.4f)\n", #v, v.x, v.y))
+#include <assert.h>
+#include "vendor/include/raylib.h"
+#include "vendor/include/raymath.h"
 
 typedef float f32;
 
-typedef struct {
-    Vector2 s, c, e;
-} QBezier;
+#define GRID_COLS 140
+#define GRID_ROWS 140
+#define TO_INDEX(r, c) (r*GRID_COLS + c)
+bool pixels[GRID_ROWS*GRID_COLS] = {0};
 
-typedef struct {
-    QBezier *items;
-    int count;
-    int capacity;
-} QBezierList;
-
-typedef struct {
-    Vector2 *items;
-    int count;
-    int capacity;
-} PointList;
-
-void render_quadratic_bezier(QBezier qb)
+void render_grid(Vector2 tl, Vector2 cell_size, f32 factor)
 {
-    // p_2 -(uv)-> (1, 1)
-    rlTexCoord2f(1.0f, 1.0f);
-    rlVertex2f(qb.e.x, qb.e.y);
+    assert(0.f <= factor);
+    assert(factor <= 1.f);
 
-    // p_1 -(uv)-> (0.5, 0)
-    rlTexCoord2f(0.5f, 0.0f);
-    rlVertex2f(qb.c.x, qb.c.y);
+    Vector2 pos = tl;
+    for (int r = 0; r < GRID_ROWS; r++) {
+        for (int c = 0; c < GRID_COLS; c++) {
+            Color clr = pixels[TO_INDEX(r, c)] ? RED : (Color){50, 50, 50, 255};
+            Vector2 size = Vector2Scale(cell_size, factor);
+            Vector2 p = Vector2Add(pos, Vector2Scale(size, 0.5f));
+            DrawRectangleV(p, size, clr);
+            pos.x += cell_size.x;
+        }
+        pos.y += cell_size.y;
+        pos.x = tl.x;
+    }
+}
 
-    // p_0 -(uv)-> (0, 0)
-    rlTexCoord2f(0.0f, 0.0f);
-    rlVertex2f(qb.s.x, qb.s.y);
+Vector2 get_px_pos(Vector2 tl, Vector2 cell_size, int r, int c)
+{
+    Vector2 ind = {c, r};
+    Vector2 px_tl = Vector2Add(tl, Vector2Multiply(cell_size, ind));
+    return Vector2Add(px_tl, Vector2Scale(cell_size, 0.5f));
 }
 
 int main(void)
 {
-    InitWindow(800, 600, "span - qbezier");
-    SetTargetFPS(90);
+    InitWindow(800, 600, "svg render - cpu");
 
-    Shader shader = LoadShader(NULL, "qloopblinn-fs.glsl");
+    f32 h = (f32)GetScreenHeight() * 0.95;
+    f32 w = h;
+    Vector2 tl = {
+        .x = 0.5f * ((f32)GetScreenWidth() - w),
+        .y = 0.5f * ((f32)GetScreenHeight() - h),
+    };
+    f32 fac = 0.5f;
+    Vector2 cell_size = {
+        .x = w / (f32)GRID_COLS,
+        .y = h / (f32)GRID_ROWS,
+    };
 
-    Arena arena = {0};
-    PointList pl = {0};
-    QBezierList qbl = {0};
-
-    Vector2 center = {300, 300};
-    f32 radius = 150.f;
-    int steps = 10;
-    f32 dangle = 2 * PI / (f32)steps;
-    f32 half_dangle = 0.5f * dangle;
-    f32 radius_p1 = radius / cosf(half_dangle);
-    for (int i = 0; i < steps; i++) {
-        f32 curr = i * dangle;
-        f32 next = (i+1) * dangle;
-        f32 mid_angle = curr + half_dangle;
-
-        QBezier qb = {
-            .s = {
-                .x = center.x + radius * cosf(curr),
-                .y = center.y + radius * sinf(curr),
-            },
-            .c = {
-                .x = center.x + radius_p1 * cosf(mid_angle),
-                .y = center.y + radius_p1 * sinf(mid_angle),
-            },
-            .e = {
-                .x = center.x + radius * cosf(next),
-                .y = center.y + radius * sinf(next),
-            }
-        };
-        arena_da_append(&arena, &qbl, qb);
-        arena_da_append(&arena, &pl, qb.s);
-        arena_da_append(&arena, &pl, qb.e);
-    }
-
-    Color c1 = RED, c2 = BLUE;
+    Vector2 center = get_px_pos(tl, cell_size, GRID_ROWS / 2, GRID_COLS / 2);
+    f32 radius = 50;
     while (!WindowShouldClose()) {
+        for (int r = 0; r < GRID_ROWS; r++) {
+            for (int c = 0; c < GRID_ROWS; c++) {
+                Vector2 pos = get_px_pos(tl, cell_size, r, c);
+                f32 dist = Vector2LengthSqr(Vector2Subtract(pos, center));
+
+                if (dist <= radius * radius) {
+                    pixels[TO_INDEX(r, c)] = true;
+                } else {
+                    pixels[TO_INDEX(r, c)] = false;
+                }
+            }
+        }
+
         BeginDrawing(); {
             ClearBackground(BLACK);
-
-            rlBegin(RL_TRIANGLES); {
-                rlColor4ub(c1.r, c1.g, c1.b, c1.a);
-
-                for (int i = 0; i < pl.count - 1; i++) {
-                    // This must be in this order because the winding order must
-                    // be in the positive (CCW) orientation.
-                    rlVertex2f(center.x, center.y);
-                    rlVertex2f(pl.items[i+1].x, pl.items[i+1].y);
-                    rlVertex2f(pl.items[i].x, pl.items[i].y);
-                }
-            } rlEnd();
-
-            BeginShaderMode(shader); {
-                rlBegin(RL_TRIANGLES); {
-                    // rlColor4ub(c2.r, c2.g, c2.b, c2.a);
-                    rlColor4ub(c1.r, c1.g, c1.b, c1.a);
-                    for (int i = 0; i < qbl.count; i++) {
-                        render_quadratic_bezier(qbl.items[i]);
-                    }
-                } rlEnd();
-            } EndShaderMode();
-
-            DrawFPS(10, 10);
+            render_grid(tl, cell_size, fac);
+            DrawCircleV(center, radius, ColorAlpha(BLUE, 0.5));
+            // DrawRectangleLinesEx(r, 3.f, DARKGRAY);
         } EndDrawing();
     }
 
     CloseWindow();
     return 0;
-}
-
-void DrawCubicRecursive(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, int depth)
-{
-    // If we have split enough times, approximate as Quadratic and draw
-    // (Depth of 3 or 4 is usually plenty for visual accuracy)
-    if (depth >= 3) {
-        // Calculate the single quadratic control point that approximates this cubic
-        // Formula: Q1 = (3*P1 + 3*P2 - P0 - P3) / 4
-        Vector2 term1 = Vector2Scale(Vector2Add(p1, p2), 3.0f);
-        Vector2 term2 = Vector2Add(p0, p3);
-        // Vector2 q1 = Vector2Scale(Vector2Add(term1, Vector2Scale(term2, -1.0f)), 0.25f);
-        Vector2 q1 = Vector2Scale(Vector2Subtract(term1, term2), 0.25f);
-
-        // DrawSplineSegmentBezierQuadratic(p0, q1, p3, 3.f, RED);
-        QBezier qb = { .s = p0, .c = q1, .e = p3 };
-        render_quadratic_bezier(qb);
-        f32 r = 6.f;
-        DrawCircleV(qb.s, r, RED);
-        DrawCircleV(qb.c, r, GREEN);
-        DrawCircleV(qb.e, r, BLUE);
-        return;
-    }
-
-    // --- De Casteljau Subdivision at t=0.5 ---
-
-    // Level 1 midpoints
-    Vector2 m0 = Vector2Scale(Vector2Add(p0, p1), 0.5f);
-    Vector2 m1 = Vector2Scale(Vector2Add(p1, p2), 0.5f);
-    Vector2 m2 = Vector2Scale(Vector2Add(p2, p3), 0.5f);
-
-    // Level 2 midpoints
-    Vector2 q0 = Vector2Scale(Vector2Add(m0, m1), 0.5f);
-    Vector2 q1 = Vector2Scale(Vector2Add(m1, m2), 0.5f);
-
-    // Level 3 midpoint (The actual point on the curve)
-    Vector2 split = Vector2Scale(Vector2Add(q0, q1), 0.5f);
-
-    // Recursively draw the two halves
-    // Left Cubic: p0, m0, q0, split
-    DrawCubicRecursive(p0, m0, q0, split, depth + 1);
-
-    // Right Cubic: split, q1, m2, p3
-    DrawCubicRecursive(split, q1, m2, p3, depth + 1);
 }
