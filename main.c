@@ -12,6 +12,7 @@ typedef struct {
     int count, capacity;
 } Points;
 
+#define CELL_FILL_FACTOR 0.5f
 #define CELL_W 5
 #define FILL_COLOR BLUE
 #define STROKE_COLOR RED
@@ -69,15 +70,15 @@ int qbezier_count_roots_horz(Vector2 p0, Vector2 c1, Vector2 p2, Vector2 ray)
     return count;
 }
 
-void render_grid(Vector2 tl, Vector2 cell_size, f32 factor)
+void render_grid(Vector2 tl, Vector2 cell_size)
 {
-    assert(0.f <= factor);
-    assert(factor <= 1.f);
+    assert(0.f <= CELL_FILL_FACTOR);
+    assert(CELL_FILL_FACTOR <= 1.f);
 
     Vector2 pos = tl;
     for (int r = 0; r < grid_r; r++) {
         for (int c = 0; c < grid_c; c++) {
-            Vector2 size = Vector2Scale(cell_size, factor);
+            Vector2 size = Vector2Scale(cell_size, CELL_FILL_FACTOR);
             Vector2 p = Vector2Add(pos, Vector2Scale(size, 0.5f));
             DrawRectangleV(p, size, pixels[TO_INDEX(r, c)]);
             pos.x += cell_size.x;
@@ -91,16 +92,13 @@ void control_points(void)
 {
     Vector2 mouse_pos = GetMousePosition();
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        if (pts.count < 6) {
-            arena_da_append(&a, &pts, mouse_pos);
-        } else {
-            for (int i = 0; drag_ind == -1 && i < pts.count; i++) {
-                if (CheckCollisionPointCircle(mouse_pos, pts.items[i], pt_r)) {
-                    drag_ind = i;
-                    break;
-                }
+        for (int i = 0; drag_ind == -1 && i < pts.count; i++) {
+            if (CheckCollisionPointCircle(mouse_pos, pts.items[i], pt_r)) {
+                drag_ind = i;
+                break;
             }
         }
+        if (drag_ind == -1) arena_da_append(&a, &pts, mouse_pos);
     }
 
     if (IsMouseButtonUp(MOUSE_BUTTON_LEFT) && drag_ind >= 0) {
@@ -119,7 +117,9 @@ void clear_grid(void)
 
 void fill_spline_evenodd_grid(void)
 {
-    if (pts.count != 6) return;
+    if (pts.count <= 3) return;
+    if (pts.count % 2 != 0) return;
+
     int count = 0;
     for (int r = 0; r < grid_r; r++) {
         for (int c = 0; c < grid_c; c++) {
@@ -164,7 +164,6 @@ int main(void)
 
     f32 w = (f32)GetScreenWidth();
     f32 h = (f32)GetScreenHeight();
-    f32 fac = 0.5f;
     grid_c = (int)(w / cell_size.x);
     grid_r = (int)(h / cell_size.y);
     printf("Grid size: %d x %d\n", grid_c, grid_r);
@@ -177,22 +176,6 @@ int main(void)
     pixels = arena_alloc(&a, pixels_count);
     clear_grid();
 
-    Vector2 temp[] = {
-        {214.000, 65.000},
-        {142.000, 196.000},
-        {259.000, 336.000},
-        {468.000, 310.000},
-        {465.000, 149.000},
-        {361.000, 60.000},
-    };
-    for (int i = 0; i < 6; i++) {
-        arena_da_append(&a, &pts, temp[i]);
-    }
-    printf("Point Count: %d\n", pts.count);
-
-    f32 dt = 0.075f;
-    // Vector2 marker_size = Vector2Scale(cell_size, 0.3f);
-    f32 marker_size = 5.f;
     while (!WindowShouldClose()) {
         control_points();
         clear_grid();
@@ -201,22 +184,13 @@ int main(void)
 
         BeginDrawing(); {
             ClearBackground(BLACK);
-            render_grid(tl, cell_size, fac);
+            render_grid(tl, cell_size);
             for (int i = 0; i < pts.count; i++) {
                 DrawCircleV(pts.items[i], pt_r, MARKER_COLOR);
             }
             DrawFPS(10, 10);
         } EndDrawing();
     }
-
-#if 0
-    printf("{\n");
-    for (int i = 0; i < pts.count; i++) {
-        Vector2 p = pts.items[i];
-        printf("    {%.3f, %.3f},\n", p.x, p.y);
-    }
-    printf("}\n");
-#endif
 
     CloseWindow();
     arena_free(&a);
